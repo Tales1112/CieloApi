@@ -11,6 +11,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
+using Cielo;
+using ApiCielo.Utils;
+using ApiCielo.Models;
 
 namespace ApiCielo
 {
@@ -27,6 +30,11 @@ namespace ApiCielo
         public void ConfigureServices(IServiceCollection services)
         {
             object p = services.AddControllers().AddNewtonsoftJson();
+            var appSettingsSections = Configuration.GetSection("AppSettings");
+            var appSettings = appSettingsSections.Get<CieloApiCredencialsModel>();
+            services.AddSingleton(new Merchant(appSettings.CieloId, appSettings.CieloKey));
+            ISerializerJSON json = new SerializerJSON();
+            services.AddSingleton(new CieloApi(CieloEnvironment.SANDBOX, Merchant.SANDBOX, json));
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.

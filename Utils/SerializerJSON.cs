@@ -1,7 +1,7 @@
 ﻿using Cielo;
 using System.Net.Http;
 
-namespace ApiCielo.Controllers
+namespace ApiCielo.Utils
 {
     internal class SerializerJSON : ISerializerJSON
     {

@@ -14,31 +14,28 @@ namespace ApiCielo.Controllers
     [ApiController]
     public class CieloController : ControllerBase
     {
-        private string _nome;
-        private string _nomeCartao;
-        private string _descricao;
-        private CieloApi _api;
-        private DateTime _validDate;
-        private DateTime _invalidDate;
-        [HttpPost("fazer_transacao")]
-        public async Task<IActionResult> TransctionRequest([FromBody] TransactionData transactionData)
+        private readonly CieloApi _api;
+        private readonly Merchant _merchant;
+
+        public CieloController(CieloApi cieloApi, Merchant merchant)
         {
-            ISerializerJSON json = new SerializerJSON();
-            Guid key = new Guid("ac1c2e84-c004-4c27-a4d6-cf67bdfbb2d3");
+            _api = cieloApi;
+            _merchant = merchant;
+        }
 
-            Merchant merchant = new Merchant(key, "ZZIMLFOIASAUWNYTRUWEZBNPDJGOHVAODXZPWSED");
-            _api = new CieloApi(CieloEnvironment.SANDBOX, Merchant.SANDBOX, json);
-            _validDate = DateTime.Now.AddYears(2);
-            _invalidDate = DateTime.Now.AddYears(-2);
+        [HttpPost("fazer_transacao")]
+        public IActionResult TransctionRequest([FromBody] TransactionData transactionData)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState.Values.SelectMany(e => e.Errors));
+            }
 
-            _nome = "Tales Silva";
-            _nomeCartao = "Tales Carvalho Silva";
-            _descricao = "Teste Cielo";
+            //Mapeia strings em enums
+            Enum.TryParse(transactionData.Payment.CreditCard.Brand, out CardBrand brand);
+            Enum.TryParse(transactionData.Payment.Currency, out Currency currency);
 
-            CardBrand brand = CardBrand.Visa;
-
-
-            var customerCielo = new Customer(name: _nomeCartao)
+            var customerCielo = new Customer(name: transactionData.Customer.Name)
             {
                 Address = new Address()
                 {
@@ -56,7 +53,7 @@ namespace ApiCielo.Controllers
             DateTime birthday = DateTime.Parse(transactionData.Customer.Birthdate);
 
             customerCielo.SetIdentityType(IdentityType.CPF);
-            customerCielo.Identity = transactionData.Customer.Identity; //numero gerado aleatoriamente
+            customerCielo.Identity = transactionData.Customer.Identity;
             customerCielo.SetBirthdate(birthday);
             customerCielo.Email = transactionData.Customer.Email;
 
@@ -68,31 +65,42 @@ namespace ApiCielo.Controllers
                 holder: transactionData.Payment.CreditCard.Holder,
                 expirationDate: expirationDate,
                 securityCode: transactionData.Payment.CreditCard.SecurityCode,
-                brand: brand);
+                brand: brand
+                );
 
             var paymentCielo = new Payment(
                 
                 amount: test,
-                currency: Currency.BRL,
+                currency: currency,
                 installments: transactionData.Payment.Installments.Value,
                 capture: transactionData.Payment.Capture.Value,
                 softDescriptor: transactionData.Payment.SoftDescriptor,
                 card: transactionData.Payment.CreditCard,
-                returnUrl: transactionData.Payment.ReturnUrl);
+                returnUrl: transactionData.Payment.ReturnUrl
+                );
 
-            /* store order number */
 
             var merchantOrderId = transactionData.MerchantOrderId;
 
             var transaction = new Transaction(
                 merchantOrderId: merchantOrderId.ToString(),
                 customer: customerCielo,
-                payment: paymentCielo);
+                payment: paymentCielo
+                );
+            
+            try
+            {
+                var returnTransaction = _api.CreateTransaction(Guid.NewGuid(), transaction);
 
-            var returnTransaction = _api.CreateTransaction(Guid.NewGuid(), transaction);
-
-            //Consultando
-            var result = _api.GetTransaction(returnTransaction.Payment.PaymentId.Value);
+                if(returnTransaction.Payment.GetStatus() == Status.Denied)
+                {
+                    return BadRequest("Erro na transação");
+                }
+            }
+            catch (CieloException ex)
+            {
+                return BadRequest(ex.GetCieloErrors());
+            }
 
             return Ok();
 
